@@ -66,6 +66,7 @@ export default function useBalances() {
       // Mark as finished when the last address is processed
       setFinished(true);
     } catch (err) {
+      console.error('Failed to fetch balances:', err);
       setError('Failed to fetch balances. Please try again.');
     } finally {
       setLoading(false);
