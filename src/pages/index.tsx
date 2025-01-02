@@ -1,27 +1,39 @@
 import { useEffect, useState } from 'react';
 import useBalances from '../hooks/useBalances';
 
-const truncateAddress = (address) => {
-  if (typeof address !== 'string' || address.length < 10) return address;
-  return `${address.slice(0, 6)}...${address.slice(-4)}`;
-};
-
 export default function Home() {
   const [addresses, setAddresses] = useState('');
+  const [fetchStartTime, setFetchStartTime] = useState<number | null>(null);
+  const [currentFetchDuration, setCurrentFetchDuration] = useState(0);
+  const [lastFetchDuration, setLastFetchDuration] = useState<number | null>(
+    null
+  );
   const [previousResults, setPreviousResults] = useState([]);
-  const [lastUpdated, setLastUpdated] = useState('');
+  const [previousFetchTime, setPreviousFetchTime] = useState<string | null>(
+    null
+  );
   const { results, fetchBalances, calculateTotal, loading, finished, error } =
     useBalances();
 
-  // Load data from localStorage on mount
+  // Load addresses, previous results, and last fetch duration from localStorage on mount
   useEffect(() => {
     const savedAddresses = localStorage.getItem('debank-addresses');
-    const savedResults = localStorage.getItem('debank-results');
-    const savedLastUpdated = localStorage.getItem('debank-last-updated');
+    const savedPreviousResults = localStorage.getItem(
+      'debank-previous-results'
+    );
+    const savedLastFetchDuration = localStorage.getItem(
+      'debank-last-fetch-duration'
+    );
+    const savedPreviousFetchTime = localStorage.getItem(
+      'debank-previous-fetch-time'
+    );
 
     if (savedAddresses) setAddresses(savedAddresses);
-    if (savedResults) setPreviousResults(JSON.parse(savedResults));
-    if (savedLastUpdated) setLastUpdated(savedLastUpdated);
+    if (savedPreviousResults)
+      setPreviousResults(JSON.parse(savedPreviousResults));
+    if (savedLastFetchDuration)
+      setLastFetchDuration(Number(savedLastFetchDuration));
+    if (savedPreviousFetchTime) setPreviousFetchTime(savedPreviousFetchTime);
   }, []);
 
   // Save addresses to localStorage whenever they change
@@ -29,15 +41,44 @@ export default function Home() {
     localStorage.setItem('debank-addresses', addresses);
   }, [addresses]);
 
-  // Save results and last updated date to localStorage after fetching
+  // Save results and fetch time to localStorage when fetch finishes
   useEffect(() => {
-    if (finished && results.length > 0) {
-      localStorage.setItem('debank-results', JSON.stringify(results));
-      const currentTime = new Date().toLocaleString();
-      setLastUpdated(currentTime);
-      localStorage.setItem('debank-last-updated', currentTime);
+    if (finished) {
+      const now = new Date().toLocaleString();
+      localStorage.setItem('debank-previous-results', JSON.stringify(results));
+      localStorage.setItem('debank-previous-fetch-time', now);
+      setPreviousResults(results);
+      setPreviousFetchTime(now);
     }
-  }, [results, finished]);
+  }, [finished, results]);
+
+  // Start the timer when a fetch begins
+  useEffect(() => {
+    let timer: NodeJS.Timeout | null = null;
+
+    if (loading) {
+      setFetchStartTime(Date.now());
+      setCurrentFetchDuration(0);
+
+      // Update the timer every second
+      timer = setInterval(() => {
+        setCurrentFetchDuration(
+          Math.floor((Date.now() - (fetchStartTime || 0)) / 1000)
+        );
+      }, 1000);
+    } else if (fetchStartTime) {
+      // When the fetch finishes, calculate and save the duration
+      const duration = Math.floor((Date.now() - fetchStartTime) / 1000);
+      setLastFetchDuration(duration);
+      localStorage.setItem('debank-last-fetch-duration', String(duration));
+      setFetchStartTime(null);
+      setCurrentFetchDuration(0);
+    }
+
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [loading, fetchStartTime]);
 
   const handleFetch = () => {
     const addressList = addresses
@@ -45,6 +86,10 @@ export default function Home() {
       .map((addr) => addr.trim())
       .filter((addr) => addr !== '');
     fetchBalances(addressList);
+  };
+
+  const truncateAddress = (address: string) => {
+    return `${address.slice(0, 6)}...${address.slice(-4)}`;
   };
 
   return (
@@ -74,49 +119,6 @@ export default function Home() {
 
         {error && <p className='text-red-500 mt-4'>{error}</p>}
 
-        {/* Display previous results */}
-        {previousResults.length > 0 && (
-          <div className='mt-8'>
-            <h2 className='text-xl font-bold mb-4 text-center'>
-              Previous Results (Last Updated: {lastUpdated || 'N/A'})
-            </h2>
-            <table className='w-full border-collapse border border-gray-700 text-sm'>
-              <thead>
-                <tr>
-                  <th className='border border-gray-700 p-2 text-left'>
-                    Address
-                  </th>
-                  <th className='border border-gray-700 p-2 text-left'>
-                    Balance
-                  </th>
-                  <th className='border border-gray-700 p-2 text-left'>
-                    Percentage Change
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {previousResults.map((result, index) => (
-                  <tr key={index}>
-                    <td
-                      className='border border-gray-700 p-2 break-words max-w-[150px]'
-                      title={result.address}
-                    >
-                      {truncateAddress(result.address)}
-                    </td>
-                    <td className='border border-gray-700 p-2'>
-                      {result.balance}
-                    </td>
-                    <td className='border border-gray-700 p-2'>
-                      {result.percentageChange || 'N/A'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Display current results */}
         {results.length > 0 && (
           <div className='mt-8'>
             <h2 className='text-xl font-bold mb-4 text-center'>Results</h2>
@@ -137,11 +139,10 @@ export default function Home() {
               <tbody>
                 {results.map((result, index) => (
                   <tr key={index}>
-                    <td
-                      className='border border-gray-700 p-2 break-words max-w-[150px]'
-                      title={result.address}
-                    >
-                      {truncateAddress(result.address)}
+                    <td className='border border-gray-700 p-2 break-words'>
+                      <span title={result.address}>
+                        {truncateAddress(result.address)}
+                      </span>
                     </td>
                     <td className='border border-gray-700 p-2'>
                       {result.balance === 'Loading...' ? (
@@ -169,6 +170,64 @@ export default function Home() {
               {finished ? 'Total Balance' : 'Balance So Far'}: $
               {calculateTotal().toLocaleString()}
             </p>
+          </div>
+        )}
+
+        {/* Timer Section */}
+        <div className='mt-4 text-center'>
+          {loading && (
+            <p className='text-gray-400'>
+              Fetching data... {currentFetchDuration}s elapsed
+            </p>
+          )}
+          {!loading && lastFetchDuration !== null && (
+            <p className='text-gray-400'>
+              Last fetch took {lastFetchDuration}s
+            </p>
+          )}
+        </div>
+
+        {/* Previous Results Section */}
+        {previousResults.length > 0 && (
+          <div className='mt-8'>
+            <h2 className='text-xl font-bold mb-4 text-center'>
+              Previous Results
+            </h2>
+            <p className='text-sm text-gray-400 text-center mb-4'>
+              Last fetched at: {previousFetchTime || 'N/A'}
+            </p>
+            <table className='w-full border-collapse border border-gray-700 text-sm'>
+              <thead>
+                <tr>
+                  <th className='border border-gray-700 p-2 text-left'>
+                    Address
+                  </th>
+                  <th className='border border-gray-700 p-2 text-left'>
+                    Balance
+                  </th>
+                  <th className='border border-gray-700 p-2 text-left'>
+                    Percentage Change
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {previousResults.map((result, index) => (
+                  <tr key={index}>
+                    <td className='border border-gray-700 p-2 break-words'>
+                      <span title={result.address}>
+                        {truncateAddress(result.address)}
+                      </span>
+                    </td>
+                    <td className='border border-gray-700 p-2'>
+                      {result.balance}
+                    </td>
+                    <td className='border border-gray-700 p-2'>
+                      {result.percentageChange || 'N/A'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
