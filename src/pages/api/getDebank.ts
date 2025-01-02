@@ -1,5 +1,8 @@
-import puppeteer from 'puppeteer';
+import puppeteer from 'puppeteer-core';
+import chromium from '@sparticuz/chromium';
 import type { NextApiRequest, NextApiResponse } from 'next';
+
+const WAIT_TIMEOUT = 3000;
 
 export default async function handler(
   req: NextApiRequest,
@@ -21,60 +24,59 @@ export default async function handler(
   const balanceSelector = '[class^="HeaderInfo_totalAssetInner"]';
   const percentageSelector = '[class^="HeaderInfo_changePercent"]';
 
+  let browser = null;
+
   try {
-    const browser = await puppeteer.launch({
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      headless: true,
+    // Determine executable path dynamically for local or production
+    const executablePath =
+      process.env.NODE_ENV === 'production'
+        ? await chromium.executablePath()
+        : 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+
+    console.log('Using Chromium executable path:', executablePath);
+
+    // Launch Puppeteer with the appropriate Chromium configuration
+    browser = await puppeteer.launch({
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath,
+      headless: chromium.headless,
     });
 
     const page = await browser.newPage();
-
-    // Set a user agent to mimic a real browser
-    await page.setUserAgent(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    );
-
-    // Navigate to the page
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-
-    // Wait for the balance element to appear
-    await page.waitForSelector(balanceSelector, {
-      visible: true,
-      timeout: 15000,
+    await page.goto(url, {
+      waitUntil: 'domcontentloaded',
+      timeout: WAIT_TIMEOUT,
     });
 
-    // Check for a balance update or confirm $0
-    const usdBalance = await page.evaluate(
-      async (selector, timeout) => {
-        const element = document.querySelector(selector);
-        if (!element) return '$0';
+    // Wait for the balance element to appear and update its content
+    await page.waitForFunction(
+      (selector) => {
+        const el = document.querySelector(selector);
+        if (!el) return false;
 
-        const startTime = Date.now();
-        while (Date.now() - startTime < timeout) {
-          const balanceText =
-            element.textContent?.match(/\$[\d,]+/)?.[0] || '$0';
-          if (balanceText !== '$0') return balanceText; // Return updated balance if found
-          await new Promise((r) => setTimeout(r, 100)); // Wait briefly before checking again
-        }
-        return '$0'; // Timeout reached, assume real $0 balance
+        const balanceText = el.textContent?.match(/\$[\d,]+/)?.[0] || '$0';
+        return balanceText !== '$0'; // Resolve only when balance is non-zero
       },
-      balanceSelector,
-      30000 // Timeout in milliseconds
+      { timeout: WAIT_TIMEOUT },
+      balanceSelector
     );
 
-    // Extract the percentage change with a fail-safe
+    // Extract the balance value
+    const usdBalance = await page.$eval(balanceSelector, (el) => {
+      const balanceText = el.textContent?.match(/\$[\d,]+/)?.[0] || '$0';
+      return balanceText;
+    });
+
+    // Extract the percentage change with a fallback
     let percentageChange: string | null = null;
     try {
-      percentageChange = await page.$eval(
-        percentageSelector,
-        (element) => element.textContent?.trim() || '0%'
-      );
+      percentageChange = await page.$eval(percentageSelector, (el) => {
+        return el.textContent?.trim() || '0%';
+      });
     } catch {
       percentageChange = null;
     }
-
-    // Close the browser
-    await browser.close();
 
     res.status(200).json({ balance: usdBalance, percentageChange });
   } catch (error) {
@@ -82,5 +84,9 @@ export default async function handler(
     res.status(500).json({
       error: error instanceof Error ? error.message : 'Unknown error',
     });
+  } finally {
+    if (browser) {
+      await browser.close();
+    }
   }
 }
