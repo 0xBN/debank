@@ -1,6 +1,6 @@
 {
   "functions": {
-    "api/getDebank": {
+    "src/pages/api/getDebank.ts": {
       "maxDuration": 30
     }
   }
