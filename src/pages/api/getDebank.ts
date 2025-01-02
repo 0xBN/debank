@@ -17,10 +17,7 @@ export default async function handler(
     return;
   }
 
-  // Construct the full URL
   const url = `https://debank.com/profile/${address}`;
-
-  // Using "starts with" selector for more robust targeting
   const balanceSelector = '[class^="HeaderInfo_totalAssetInner"]';
   const percentageSelector = '[class^="HeaderInfo_changePercent"]';
 
@@ -40,41 +37,40 @@ export default async function handler(
     // Navigate to the page
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
-    // Wait for the balance element to appear and update
+    // Wait for the balance element to appear
     await page.waitForSelector(balanceSelector, {
       visible: true,
       timeout: 15000,
     });
 
-    // Wait for the balance to become non-zero
-    await page.waitForFunction(
-      (balanceSelector) => {
-        const element = document.querySelector(balanceSelector);
-        if (!element) return false;
+    // Check for a balance update or confirm $0
+    const usdBalance = await page.evaluate(
+      async (selector, timeout) => {
+        const element = document.querySelector(selector);
+        if (!element) return '$0';
 
-        // Extract only the balance part (ignore percentage)
-        const balanceText = element.textContent?.match(/\$[\d,]+/)?.[0] || '$0';
-        return balanceText !== '$0'; // Return true when the balance is non-zero
+        const startTime = Date.now();
+        while (Date.now() - startTime < timeout) {
+          const balanceText =
+            element.textContent?.match(/\$[\d,]+/)?.[0] || '$0';
+          if (balanceText !== '$0') return balanceText; // Return updated balance if found
+          await new Promise((r) => setTimeout(r, 100)); // Wait briefly before checking again
+        }
+        return '$0'; // Timeout reached, assume real $0 balance
       },
-      { timeout: 30000 }, // Wait up to 30 seconds for the balance to update
-      balanceSelector // Pass the selector as an argument
+      balanceSelector,
+      30000 // Timeout in milliseconds
     );
 
-    // Extract the balance
-    const usdBalance = await page.$eval(balanceSelector, (element) => {
-      const balanceText = element.textContent?.match(/\$[\d,]+/)?.[0] || '$0';
-      return balanceText; // Return the cleaned balance
-    });
-
-    // Extract the percentage change with fail-safe
+    // Extract the percentage change with a fail-safe
     let percentageChange: string | null = null;
     try {
-      percentageChange = await page.$eval(percentageSelector, (element) => {
-        return element.textContent?.trim() || '0%'; // Default to "0%" if not found
-      });
-    } catch (err) {
-      console.warn('Failed to fetch percentage change:', err);
-      percentageChange = null; // Set to null if not found
+      percentageChange = await page.$eval(
+        percentageSelector,
+        (element) => element.textContent?.trim() || '0%'
+      );
+    } catch {
+      percentageChange = null;
     }
 
     // Close the browser

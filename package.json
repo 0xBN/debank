@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "postinstall": "puppeteer install"
+    "postinstall": "npx puppeteer install"
   },
   "dependencies": {
     "next": "15.1.3",
