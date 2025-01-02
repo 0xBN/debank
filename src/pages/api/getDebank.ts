@@ -37,8 +37,14 @@ export default async function handler(
 
     // Launch Puppeteer with the appropriate Chromium configuration
     browser = await puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--disable-gpu',
+      ],
+      defaultViewport: { width: 800, height: 600 },
       executablePath,
       headless: chromium.headless,
     });
@@ -51,6 +57,16 @@ export default async function handler(
     );
     await page.setExtraHTTPHeaders({
       'Accept-Language': 'en-US,en;q=0.9',
+    });
+
+    await page.setRequestInterception(true);
+    page.on('request', (request) => {
+      const blockResources = ['image', 'media', 'font'];
+      if (blockResources.includes(request.resourceType())) {
+        request.abort();
+      } else {
+        request.continue();
+      }
     });
 
     await page.goto(url, {
