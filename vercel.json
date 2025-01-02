@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/getDebank": {
+      "maxDuration": 30
+    }
+  }
+}
