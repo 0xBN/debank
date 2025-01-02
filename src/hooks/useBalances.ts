@@ -3,7 +3,7 @@ import { useState } from 'react';
 export type BalanceResult = {
   address: string;
   balance: string;
-  percentageChange: string | null;
+  percentageChange: string | 'Loading...' | null;
 };
 
 export default function useBalances() {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import useBalances from '../hooks/useBalances';
+import useBalances, { BalanceResult } from '../hooks/useBalances';
 
 export default function Home() {
   const [addresses, setAddresses] = useState('');
@@ -8,7 +8,8 @@ export default function Home() {
   const [lastFetchDuration, setLastFetchDuration] = useState<number | null>(
     null
   );
-  const [previousResults, setPreviousResults] = useState([]);
+  const [previousResults, setPreviousResults] = useState<BalanceResult[]>([]); // Explicit type
+
   const [previousFetchTime, setPreviousFetchTime] = useState<string | null>(
     null
   );
