@@ -2,7 +2,7 @@ import puppeteer from 'puppeteer-core';
 import chromium from '@sparticuz/chromium';
 import type { NextApiRequest, NextApiResponse } from 'next';
 
-const WAIT_TIMEOUT = 30000;
+const WAIT_TIMEOUT = 60000;
 
 export default async function handler(
   req: NextApiRequest,

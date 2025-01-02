@@ -13,7 +13,7 @@ export default async function handler(
     const executablePath =
       process.env.NODE_ENV === 'production'
         ? await chromium.executablePath() // Use Sparticuz Chromium in production
-        : 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'; // Local Chrome path for development
+        : 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 
     // Launch Puppeteer with the appropriate Chromium configuration
     browser = await puppeteer.launch({
